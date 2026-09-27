@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Desert Ops 3D - Tactical Shooter</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Teko:wght@600;700&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0c0a09;
+            font-family: 'Rajdhani', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .font-teko { font-family: 'Teko', sans-serif; }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* Tactical HUD Elements */
+        .glass-hud {
+            background: rgba(12, 10, 9, 0.75);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(217, 119, 6, 0.3);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        .crosshair-line {
+            position: absolute;
+            background-color: #f59e0b;
+            box-shadow: 0 0 4px #f59e0b;
+        }
+
+        /* Hit marker animation */
+        @keyframes hitPulse {
+            0% { transform: translate(-50%, -50%) scale(1.5); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        }
+
+        .hit-marker {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 24px;
+            height: 24px;
+            pointer-events: none;
+            z-index: 21;
+            display: none;
+        }
+        .hit-marker.active {
+            display: block;
+            animation: hitPulse 0.15s ease-out forwards;
+        }
+
+        /* Scope overlay */
+        #scope-overlay {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.95) 60%);
+            pointer-events: none;
+            z-index: 15;
+            display: none;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.4); }
+        ::-webkit-scrollbar-thumb { background: #d97706; border-radius: 3px; }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Scope Overlay for Aiming Down Sights -->
+    <div id="scope-overlay"></div>
+
+    <!-- Dynamic Tactical Crosshair -->
+    <div id="crosshair">
+        <div class="crosshair-line w-3 h-0.5 -left-4 top-1/2 -translate-y-1/2"></div>
+        <div class="crosshair-line w-3 h-0.5 left-1 top-1/2 -translate-y-1/2"></div>
+        <div class="crosshair-line h-3 w-0.5 -top-4 left-1/2 -translate-x-1/2"></div>
+        <div class="crosshair-line h-3 w-0.5 top-1 left-1/2 -translate-x-1/2"></div>
+        <div class="w-1 h-1 bg-amber-500 rounded-full absolute -top-0.5 -left-0.5"></div>
+    </div>
+
+    <!-- Hit Marker -->
+    <div id="hit-marker" class="hit-marker">
+        <div class="absolute w-full h-0.5 bg-red-500 rotate-45 top-1/2 -translate-y-1/2"></div>
+        <div class="absolute w-full h-0.5 bg-red-500 -rotate-45 top-1/2 -translate-y-1/2"></div>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div id="hud-overlay" class="absolute inset-0 p-6 pointer-events-none flex flex-col justify-between z-10 hidden">
+        <!-- Top HUD Header -->
+        <div class="flex justify-between items-start">
+            <!-- Health & Armor -->
+            <div class="glass-hud p-4 rounded-xl w-64 border-l-4 border-l-amber-500">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs uppercase tracking-widest text-amber-500 font-bold"><i class="fa-solid fa-heart pulse mr-1"></i> Health</span>
+                    <span id="hud-health-val" class="font-teko text-2xl text-amber-400">100 HP</span>
+                </div>
+                <div class="w-full bg-stone-800 h-3 rounded-full overflow-hidden p-0.5 border border-stone-700">
+                    <div id="hud-health-bar" class="bg-gradient-to-r from-red-600 via-amber-500 to-emerald-500 h-full rounded-full transition-all duration-200" style="width: 100%;"></div>
+                </div>
+            </div>
+
+            <!-- Profile Badge Header (Top Right) -->
+            <div id="hud-profile-badge" class="glass-hud p-2 pr-5 rounded-full flex items-center gap-3 border border-amber-500/30 cursor-pointer pointer-events-auto hover:border-amber-400 transition" onclick="toggleProfileModal(true)">
+                <div class="relative w-11 h-11 rounded-full overflow-hidden border-2 border-amber-500 bg-stone-800">
+                    <img id="badge-avatar-img" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80" alt="Avatar" class="w-full h-full object-cover">
+                </div>
+                <div>
+                    <div id="badge-player-name" class="font-bold text-amber-400 tracking-wider text-sm leading-none">OPERATOR</div>
+                    <div class="text-xs text-stone-400 font-mono mt-0.5">LVL <span id="badge-level">12</span> SPECOPS</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Notification Feed -->
+        <div id="kill-feed" class="self-center flex flex-col items-center gap-2 pointer-events-none"></div>
+
+        <!-- Bottom HUD Footer -->
+        <div class="flex justify-between items-end">
+            <!-- Score & Kills -->
+            <div class="glass-hud px-5 py-3 rounded-xl flex items-center gap-6 border-b-2 border-b-amber-500">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-crosshairs text-xl text-amber-500"></i>
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest text-stone-400">Eliminations</div>
+                        <div id="hud-kills" class="font-teko text-3xl leading-none text-white">0</div>
+                    </div>
+                </div>
+                <div class="h-8 w-px bg-stone-700"></div>
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-trophy text-xl text-amber-500"></i>
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest text-stone-400">Score</div>
+                        <div id="hud-score" class="font-teko text-3xl leading-none text-amber-400">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ammo Counter -->
+            <div class="glass-hud p-4 rounded-xl border-r-4 border-r-amber-500 text-right">
+                <div class="text-xs uppercase tracking-widest text-amber-500 font-bold mb-1"><i class="fa-solid fa-gun mr-1"></i> M4A1 Assault Rifle</div>
+                <div class="font-teko text-5xl leading-none text-white tracking-wider">
+                    <span id="hud-ammo-clip" class="text-amber-400">30</span> / <span id="hud-ammo-reserve" class="text-stone-400 text-3xl">120</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start / Main Menu Screen -->
+    <div id="main-menu" class="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/80 to-transparent flex items-center justify-center p-6 z-30">
+        <div class="glass-hud max-w-xl w-full p-8 rounded-3xl border border-amber-500/40 text-center flex flex-col items-center shadow-2xl relative overflow-hidden">
+            <!-- Decorative Accent Lines -->
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent"></div>
+
+            <!-- Main Menu Avatar Display -->
+            <div class="relative group mb-4">
+                <div class="w-28 h-28 rounded-full border-4 border-amber-500 p-1 bg-stone-900 shadow-xl overflow-hidden">
+                    <img id="menu-avatar-img" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80" alt="Profile Photo" class="w-full h-full object-cover rounded-full">
+                </div>
+                <button onclick="toggleProfileModal(true)" class="absolute bottom-0 right-0 bg-amber-500 hover:bg-amber-400 text-stone-950 w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition border-2 border-stone-900">
+                    <i class="fa-solid fa-camera"></i>
+                </button>
+            </div>
+
+            <h1 class="font-teko text-6xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-amber-200 leading-none mb-1">
+                DESERT OPS 3D
+            </h1>
+            <p class="text-stone-400
